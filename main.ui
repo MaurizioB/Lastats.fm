@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>671</width>
-    <height>525</height>
+    <width>699</width>
+    <height>501</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -129,6 +129,12 @@
     </item>
     <item row="0" column="0">
      <widget class="QSplitter" name="splitter_2">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
@@ -250,8 +256,8 @@
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>344</width>
-                 <height>381</height>
+                 <width>359</width>
+                 <height>376</height>
                 </rect>
                </property>
                <layout class="QVBoxLayout" name="verticalLayout">
@@ -289,7 +295,7 @@
                  </widget>
                 </item>
                 <item>
-                 <widget class="WeekPlays" name="weekTimesWidget" native="true"/>
+                 <widget class="WeekPlays" name="trackWeekdaysWidget" native="true"/>
                 </item>
                 <item>
                  <widget class="Line" name="line_7">
@@ -368,8 +374,8 @@
                 <rect>
                  <x>0</x>
                  <y>0</y>
-                 <width>333</width>
-                 <height>459</height>
+                 <width>348</width>
+                 <height>471</height>
                 </rect>
                </property>
                <layout class="QVBoxLayout" name="verticalLayout_4">
@@ -746,8 +752,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>671</width>
-     <height>16</height>
+     <width>699</width>
+     <height>18</height>
     </rect>
    </property>
   </widget>

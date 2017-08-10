@@ -3599,7 +3599,7 @@ class User(_BaseObject, _Chartable):
             params['to'] = time_to
 
 #        seq = []
-        for track_group in _collect_nodes_yield(
+        for track_group, total_pages, is_final in _collect_nodes_yield(
                 limit,
                 self,
                 self.ws_prefix + ".getRecentTracks",
@@ -3621,7 +3621,7 @@ class User(_BaseObject, _Chartable):
                 seq.append(PlayedTrack(
                     Track(artist, title, self.network), album, date, timestamp))
 
-            yield seq
+            yield seq, total_pages, is_final
 
     def get_id(self):
         """Returns the user ID."""
@@ -4284,7 +4284,11 @@ def _collect_nodes_yield(limit, sender, method_name, cacheable, params=None):
             end_of_pages = True
 
         page += 1
-        yield nodes
+        if end_of_pages or (limit and count >= limit):
+            is_final = True
+        else:
+            is_final = False
+        yield nodes, total_pages, is_final
 
 #    return nodes
 

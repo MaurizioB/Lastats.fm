@@ -186,7 +186,7 @@ class _BaseHtml(object):
         self._track_info_ext = info.rstrip(' \n').replace(u'\n', '<br/>')
 
     def setArtistImage(self, name, *args):
-        self.artist_image = '<img src="file://{}" style="float: right">'.format(name)
+        self.artist_image = '<table class="artist_image"><tr><td><img src="file://{}"></td></tr></table>'.format(name)
 
     def setArtistInfo(self, info):
         self.artist_info = info.replace(u'\n', '<br/>').replace('Read more on Last.fm', EXTERNAL_IMG).replace(
@@ -563,6 +563,7 @@ class CustomSortModel(QtGui.QStandardItemModel):
 
 class LastFM(QtCore.QObject):
     tracksReceived = QtCore.pyqtSignal(object, object)
+    receiveFinished = QtCore.pyqtSignal()
     noUser = QtCore.pyqtSignal(str)
     userValid = QtCore.pyqtSignal(bool)
     lastfmError = QtCore.pyqtSignal(object)
@@ -586,7 +587,9 @@ class LastFM(QtCore.QObject):
             details = err.details if isinstance(err, pylast.WSError) else str(err)
             self.lastfmError.emit(lastfmError(type(err), details))
         except Exception as err:
-                print 'Unknown error: {}'.format(err)
+            if err.message == '\'LastFMNetwork\' object has no attribute \'_user\'':
+                return
+            print 'Unknown error: {}'.format(err)
 
     @property
     def user(self):
@@ -753,7 +756,8 @@ class LastFM(QtCore.QObject):
         try:
             if after is not None:
                 limit = None
-            for track_group in self.user.get_recent_tracks_yield(limit=limit, page_limit=200, time_from=after):
+            #TODO crea algoritmo per approssimare numero tracce?
+            for track_group, total_pages, is_final in self.user.get_recent_tracks_yield(limit=limit, page_limit=50, time_from=after):
                 if self.retrieveStop.isSet():
                     self.retrieveStop.clear()
                     break
@@ -761,6 +765,8 @@ class LastFM(QtCore.QObject):
                 for track in track_group:
                     tracks.append((track.track, track.album, int(track.timestamp)))
                 self.tracksReceived.emit(tracks, after)
+                if is_final:
+                    self.receiveFinished.emit()
         except pylast.WSError as err:
             self.lastfmError.emit(lastfmError(type(err), err.details))
 
@@ -768,8 +774,8 @@ class LastFM(QtCore.QObject):
 class RetrieveMsgBox(QtWidgets.QMessageBox):
     def __init__(self, parent=None):
         QtWidgets.QMessageBox.__init__(self, parent)
+        self.updating = False
         self.setWindowTitle('Retrieveing tracks')
-        self.setText('Retrieveing tracks, please wait...')
         self.setStandardButtons(self.Cancel)
         self.setEscapeButton(self.Cancel)
         self.button(self.Cancel).clicked.connect(self.rejected)
@@ -779,7 +785,20 @@ class RetrieveMsgBox(QtWidgets.QMessageBox):
         self.clock.setInterval(1000)
         self.clock.timeout.connect(self.updateTime)
 
-    def show(self):
+    @property
+    def baseText(self):
+        if not self.updating:
+            text = 'Retrieveing tracks, please wait...'
+        else:
+            text = 'Retrieveing latest tracks, please wait...<br/>'\
+                '<b>Note</b>: cancelling this operation is <i>not yet</i> supported, and will result in uncomplete data, '\
+                'which will <b>not</b> be correctly updated.<br/>'\
+                'Statistics will also be unreliable too. Please, be patient.'
+        return text
+
+    def show(self, updating=False):
+        self.updating = updating
+        self.setText(self.baseText)
         QtWidgets.QMessageBox.show(self)
         self.elapsedTimer.start()
         self.clock.start()
@@ -787,14 +806,15 @@ class RetrieveMsgBox(QtWidgets.QMessageBox):
     def hideEvent(self, event):
         self.clock.stop()
 
-    def setLimit(self, limit):
+    def setLimit(self, limit=0):
         self.limit = limit
         self.current = 0
-        self.setInformativeText('0/{}\nRemaining: (computing)'.format(limit))
+        self.setInformativeText('0 tracks received of {}\nRemaining time: (computing)'.format(limit if limit else '(unknown)'))
 
     def updateTime(self):
-        if self.current_time > 1:
-            self.current_time -= 1
+        if self.limit:
+            if self.current_time > 1:
+                self.current_time -= 1
         self.updateText()
 
     def updateText(self):
@@ -802,13 +822,17 @@ class RetrieveMsgBox(QtWidgets.QMessageBox):
             remainder = '(computing)'
         else:
             remainder = '{}\'{:02d}"'.format(*map(int, divmod(self.current_time, 60)))
-        self.setInformativeText('{}/{}\nRemaining: {}'.format(self.current, self.limit, remainder))
+        self.setInformativeText('{} tracks received of {}\nRemaining time {}'.format(self.current, self.limit if self.limit else '(unknown)', remainder))
 
-    def setCurrent(self, current):
-        self.current = current
+    def tracksAdded(self, count):
+        self.current += count
+        if self.current == 0:
+            self.hide()
+            return
         elapsed = self.elapsedTimer.elapsed() / 1000.
         single = elapsed / self.current
-        self.current_time = (self.limit - self.current) * single
+        if self.limit:
+            self.current_time = (self.limit - self.current) * single
         self.updateText()
 
 
@@ -926,6 +950,7 @@ class LaStats(QtWidgets.QMainWindow):
         self.retrieveUserEdit.returnPressed.connect(lambda: self.retrieve() if self.retrieveBtn.isEnabled() else None)
         self.retrieveBtn.clicked.connect(self.retrieve)
         self.retrieveMsgBox = RetrieveMsgBox(self)
+        self.lastfm.receiveFinished.connect(self.retrieveMsgBox.hide)
         self.retrieveMsgBox.rejected.connect(self.lastfm.retrieveStop.set)
         self.saveBtn.clicked.connect(self.saveData)
         self.updateBtn.clicked.connect(self.updateTracks)
@@ -966,6 +991,12 @@ class LaStats(QtWidgets.QMainWindow):
                 background: #ffb;
                 }
             table.top_albums_container {
+                background: transparent;
+            }
+            table.artist_image {
+                float: right;
+                border-color: transparent;
+                border-width: 2px;
                 background: transparent;
             }
             h2 {
@@ -1702,16 +1733,22 @@ class LaStats(QtWidgets.QMainWindow):
         self.scrobbleHistory = {}
 
     def updateTracks(self):
+        def delayedLimit():
+            for track_group, total_pages, is_final in self.lastfm.user.get_recent_tracks_yield(limit=None, page_limit=1, time_from=after):
+                break
+            self.retrieveMsgBox.setLimit(total_pages)
         self.latestAdded = 0
         latest_item = self.trackModel.item(0, 4)
         if not latest_item:
             return
         dates = latest_item.data(DATE_ROLE)
         latest = sorted(dates, reverse=True)[0]
-        self.retrieveMsgBox.show()
+        self.retrieveMsgBox.show(updating=True)
         self.lastfm.setUser(self.retrieveUserEdit.text(), False)
-        self.retrieveMsgBox.setLimit(self.lastfm.playCount())
-        self.lastfm.retrieve(after=latest.toMSecsSinceEpoch() / 1000 + 30)
+        self.retrieveMsgBox.setLimit()
+        QtCore.QTimer.singleShot(0, delayedLimit)
+        after = latest.toMSecsSinceEpoch() / 1000 + 30
+        self.lastfm.retrieve(after=after)
 
     def retrieve(self):
         if len(self.track_data) > 100:
@@ -1726,6 +1763,7 @@ class LaStats(QtWidgets.QMainWindow):
         self.saveBtn.setEnabled(False)
         self.trackYearsWidget.reset()
         self.trackTimesWidget.reset()
+        self.trackWeekdaysWidget.reset()
         self.trackModel.clear()
         self.trackTreeModel.clear()
         self.trackTreeModel.setHorizontalHeaderLabels(['', 'Plays', 'Dates'])
@@ -1813,8 +1851,8 @@ class LaStats(QtWidgets.QMainWindow):
         if self.saveBtn.isEnabled():
             res = QtWidgets.QMessageBox.question(
                 self, 'Save statistics?', 
-                'Statistics have been updated but not stored.\
-                Do you want to save them, ignore and close or go back to Lastats.fm?', 
+                'Statistics have been updated but not stored.\n'
+                'Do you want to save them, ignore and close or go back to Lastats.fm?', 
                 QtWidgets.QMessageBox.Save|QtWidgets.QMessageBox.Ignore|QtWidgets.QMessageBox.Cancel
                 )
             if res == QtWidgets.QMessageBox.Cancel:
@@ -1942,16 +1980,16 @@ class LaStats(QtWidgets.QMainWindow):
         self.updateViews()
         self.trackTimesWidget.setTimes(self.track_times)
         self.trackYearsWidget.setYears(self.track_years)
-        self.weekTimesWidget.setDays(self.track_days)
+        self.trackWeekdaysWidget.setDays(self.track_days)
         self.topTextArea.setStats(self.topTracks, self.topArtists, self.topAlbums)
         self.trackCount += len(data)
 #        self.retrieveMsgBox.setInformativeText('{}/{}'.format(self.trackCount, self.retrieveLimitSpin.value() if self.retrieveLimitCheck.isChecked() else self.playCount))
-        self.retrieveMsgBox.setCurrent(self.trackCount)
-        if self.retrieveLimitCheck.isChecked():
-            if self.trackCount >= self.retrieveLimitSpin.value():
-                self.retrieveMsgBox.hide()
-        elif self.trackCount >= self.playCount:
-            self.retrieveMsgBox.hide()
+        self.retrieveMsgBox.tracksAdded(len(data))
+#        if self.retrieveLimitCheck.isChecked():
+#            if self.trackCount >= self.retrieveLimitSpin.value():
+#                self.retrieveMsgBox.hide()
+#        elif self.trackCount >= self.playCount:
+#            self.retrieveMsgBox.hide()
         self.trackTable.setSortingEnabled(True)
         self.trackTreeView.setSortingEnabled(True)
         timestamps = sorted(self.scrobbleHistory.keys())

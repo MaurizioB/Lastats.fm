@@ -578,6 +578,9 @@ class WeekPlays(QtWidgets.QWidget):
         self.width_delta = max(self.fontMetrics().width(d) for d in self.days) + 4
         self.compute()
 
+    def reset(self):
+        self.setDays({d:0 for d in xrange(1, 8)})
+
     def setDays(self, track_days):
         self.track_days = track_days
         self.compute()
