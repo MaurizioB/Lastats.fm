@@ -6,7 +6,7 @@ Just run ```./lastats.py```.
 
 Requirements:
 ----
-- >= PyQt-5.9
+- PyQt5, at least version 5.9
 
 Known bugs
 ----
